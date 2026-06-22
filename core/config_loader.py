@@ -219,9 +219,14 @@ def load_rules(event: Optional[str] = None) -> List[Rule]:
         os.path.join('.claude', 'hookify.*.local.md'),  # Project-level
         os.path.expanduser(os.path.join('~', '.claude', 'hookify.*.local.md')),  # Global
     ]
+    seen = set()
     files = []
     for pattern in patterns:
-        files.extend(glob.glob(pattern))
+        for f in glob.glob(pattern):
+            resolved = os.path.realpath(f)
+            if resolved not in seen:
+                seen.add(resolved)
+                files.append(f)
 
     for file_path in files:
         try:

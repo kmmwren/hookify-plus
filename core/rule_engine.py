@@ -227,8 +227,8 @@ class RuleEngine:
                         print(f"Warning: Encoding error in transcript {transcript_path}: {e}", file=sys.stderr)
                         return ''
             elif field == 'user_prompt':
-                # For UserPromptSubmit events
-                return input_data.get('user_prompt', '')
+                # For UserPromptSubmit events — Claude Code sends 'prompt', not 'user_prompt'
+                return input_data.get('user_prompt') or input_data.get('prompt', '')
 
         # Handle special cases by tool type
         if tool_name == 'Bash':
