@@ -2,7 +2,9 @@
   "name": "hookify-plus",
   "version": "1.0.0",
   "description": "Enhanced hookify with not_regex_match, value key, and read event support",
-  "author": "adrozdenko",
+  "author": {
+    "name": "adrozdenko"
+  },
   "repository": "https://github.com/adrozdenko/hookify-plus",
   "license": "MIT"
 }
