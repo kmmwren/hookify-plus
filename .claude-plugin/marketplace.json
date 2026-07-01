@@ -1,0 +1,13 @@
+{
+  "name": "hookify-plus",
+  "owner": {
+    "name": "kmmwren"
+  },
+  "plugins": [
+    {
+      "name": "hookify-plus",
+      "source": ".",
+      "description": "Enhanced hookify with not_regex_match, value key, and read event support"
+    }
+  ]
+}
