@@ -43,7 +43,7 @@ class RuleEngine:
             input_data: Hook input JSON (tool_name, tool_input, etc.)
 
         Returns:
-            Response dict with systemMessage, hookSpecificOutput, etc.
+            Response dict with hookSpecificOutput, decision, etc.
             Empty dict {} if no rules match.
         """
         hook_event = input_data.get('hook_event_name', '')
@@ -57,9 +57,12 @@ class RuleEngine:
                 else:
                     warning_rules.append(rule)
 
-        # If any blocking rules matched, block the operation
+        # If any blocking rules matched, block the operation. Matched warnings are
+        # appended too: they are the guidance for doing the blocked thing correctly
+        # (e.g. PR title conventions alongside a PR readiness gate), so dropping
+        # them would hide exactly the advice Claude needs to satisfy the block.
         if blocking_rules:
-            messages = [f"**[{r.name}]**\n{r.message}" for r in blocking_rules]
+            messages = [f"**[{r.name}]**\n{r.message}" for r in blocking_rules + warning_rules]
             combined_message = "\n\n".join(messages)
 
             # Use appropriate blocking format based on event type
@@ -70,29 +73,53 @@ class RuleEngine:
                     "systemMessage": combined_message
                 }
             elif hook_event in ['PreToolUse', 'PostToolUse']:
+                # permissionDecisionReason already tells Claude why it was blocked;
+                # a systemMessage too would print the whole rule text at the user.
                 return {
                     "hookSpecificOutput": {
                         "hookEventName": hook_event,
                         "permissionDecision": "deny",
-                        "permissionDecisionReason": combined_message  # So Claude sees WHY blocked
-                    },
-                    "systemMessage": combined_message
+                        "permissionDecisionReason": combined_message
+                    }
                 }
             else:
-                # For other events, just show message
-                return {
-                    "systemMessage": combined_message
-                }
+                # UserPromptSubmit and friends have no JSON deny mechanism (that is
+                # PreToolUse only), and exit-2 blocking there would erase the user's
+                # prompt. Deliver the rule as context so Claude is still bound by it.
+                return self._warning_response(hook_event, combined_message)
 
-        # If only warnings, show them but allow operation
+        # If only warnings, deliver them to Claude without spamming the transcript.
         if warning_rules:
             messages = [f"**[{r.name}]**\n{r.message}" for r in warning_rules]
-            return {
-                "systemMessage": "\n\n".join(messages)
-            }
+            combined_message = "\n\n".join(messages)
+            return self._warning_response(hook_event, combined_message)
 
         # No matches - allow operation
         return {}
+
+    # Events whose additionalContext is injected into Claude's context without
+    # being rendered in the user's transcript.
+    _ADDITIONAL_CONTEXT_EVENTS = frozenset({
+        'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'SessionStart',
+    })
+
+    def _warning_response(self, hook_event: str, message: str) -> Dict[str, Any]:
+        """Build a non-blocking response that reaches Claude but stays out of the transcript.
+
+        A top-level systemMessage is echoed to the user on every match, which for
+        UserPromptSubmit means hundreds of lines of rule text per prompt. Where the
+        event supports it, the same text is delivered via additionalContext instead,
+        which is injected into Claude's context silently. Events without that channel
+        fall back to systemMessage so their rules keep working.
+        """
+        if hook_event in self._ADDITIONAL_CONTEXT_EVENTS:
+            return {
+                "hookSpecificOutput": {
+                    "hookEventName": hook_event,
+                    "additionalContext": message,
+                }
+            }
+        return {"systemMessage": message}
 
     def _rule_matches(self, rule: Rule, input_data: Dict[str, Any]) -> bool:
         """Check if rule matches input data.
