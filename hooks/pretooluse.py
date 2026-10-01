@@ -46,6 +46,8 @@ def main():
             event = 'file'
         elif tool_name in ['Read', 'Glob', 'Grep', 'LS']:
             event = 'read'  # Read operations get their own event type
+        else:
+            event = 'other'  # Unmapped tools match only 'all' rules
 
         # Load rules
         rules = load_rules(event=event)
