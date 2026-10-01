@@ -1,6 +1,6 @@
 # Hookify Plus
 
-[![Version](https://img.shields.io/badge/version-0.1.0--plus.3-blue)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-git%20sha-blue)](CHANGELOG.md)
 [![Based on](https://img.shields.io/badge/based%20on-hookify%200.1.0-gray)](https://github.com/anthropics/claude-code/tree/main/plugins/hookify)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
@@ -175,14 +175,9 @@ mv ~/.claude/plugins/cache/claude-code-plugins/hookify/0.1.0.bak \
 
 ## Versioning
 
-Format: `0.1.0-plus.N`
+The plugin manifest carries no version, so the installed version is the git sha of the marketplace checkout.
 
-- `0.1.0` = upstream hookify version
-- `plus.N` = patch number
-
-When upstream releases a new version, we rebase (e.g., `0.2.0-plus.1`).
-
-See [CHANGELOG.md](CHANGELOG.md) for full history.
+See [CHANGELOG.md](CHANGELOG.md) for history.
 
 ---
 

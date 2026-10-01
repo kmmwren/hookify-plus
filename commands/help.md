@@ -17,7 +17,6 @@ The hookify plugin makes it easy to create custom hooks that prevent unwanted be
 
 Hookify installs generic hooks that run on these events:
 - **PreToolUse**: Before any tool executes (Bash, Edit, Write, etc.)
-- **PostToolUse**: After a tool executes
 - **Stop**: When Claude wants to stop working
 - **UserPromptSubmit**: When user submits a prompt
 
