@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Rule evaluation engine for hookify plugin."""
 
+import json
+import os
 import re
 import sys
 from functools import lru_cache
@@ -22,6 +24,52 @@ def compile_regex(pattern: str) -> re.Pattern:
         Compiled regex pattern
     """
     return re.compile(pattern, re.IGNORECASE)
+
+
+# Fields that name "what the assistant just said" when a Stop hook fires.
+STOP_MESSAGE_FIELDS = frozenset({
+    'last_assistant_message', 'content', 'response', 'response_text',
+})
+STOP_EVENTS = frozenset({'Stop', 'SubagentStop'})
+
+# Transcripts grow without bound; rules only ever need the recent tail.
+_TRANSCRIPT_TAIL_BYTES = 2 * 1024 * 1024
+
+
+def _read_tail(path: str, max_bytes: Optional[int] = None) -> str:
+    """Return the last max_bytes of a text file, dropping a split first line."""
+    max_bytes = max_bytes or _TRANSCRIPT_TAIL_BYTES
+    with open(path, 'rb') as f:
+        f.seek(0, os.SEEK_END)
+        size = f.tell()
+        start = max(0, size - max_bytes)
+        f.seek(start)
+        data = f.read()
+    text = data.decode('utf-8', errors='replace')
+    if start > 0:
+        text = text.split('\n', 1)[-1]
+    return text
+
+
+def last_assistant_text(transcript_path: str) -> Optional[str]:
+    """Last assistant text block in a transcript JSONL, read from the end."""
+    for line in reversed(_read_tail(transcript_path).splitlines()):
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        message = entry.get('message') if isinstance(entry, dict) else None
+        if not isinstance(message, dict) or message.get('role') != 'assistant':
+            continue
+        content = message.get('content')
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            texts = [b.get('text', '') for b in content
+                     if isinstance(b, dict) and b.get('type') == 'text']
+            if texts:
+                return '\n'.join(texts)
+    return None
 
 
 class RuleEngine:
@@ -47,6 +95,10 @@ class RuleEngine:
             Empty dict {} if no rules match.
         """
         hook_event = input_data.get('hook_event_name', '')
+        # A Stop that is already continuing because of a block must not be blocked
+        # again, or a rule the model cannot satisfy loops forever.
+        if hook_event in STOP_EVENTS and input_data.get('stop_hook_active'):
+            return {}
         blocking_rules = []
         warning_rules = []
 
@@ -72,7 +124,7 @@ class RuleEngine:
                     "reason": combined_message,
                     "systemMessage": combined_message
                 }
-            elif hook_event in ['PreToolUse', 'PostToolUse']:
+            elif hook_event in ['PreToolUse']:
                 # permissionDecisionReason already tells Claude why it was blocked;
                 # a systemMessage too would print the whole rule text at the user.
                 return {
@@ -100,7 +152,7 @@ class RuleEngine:
     # Events whose additionalContext is injected into Claude's context without
     # being rendered in the user's transcript.
     _ADDITIONAL_CONTEXT_EVENTS = frozenset({
-        'UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'SessionStart',
+        'UserPromptSubmit', 'PreToolUse', 'SessionStart',
     })
 
     def _warning_response(self, hook_event: str, message: str) -> Dict[str, Any]:
@@ -239,20 +291,16 @@ class RuleEngine:
                 transcript_path = input_data.get('transcript_path')
                 if transcript_path:
                     try:
-                        with open(transcript_path, 'r') as f:
-                            return f.read()
+                        return _read_tail(transcript_path)
                     except FileNotFoundError:
                         print(f"Warning: Transcript file not found: {transcript_path}", file=sys.stderr)
-                        return ''
-                    except PermissionError:
-                        print(f"Warning: Permission denied reading transcript: {transcript_path}", file=sys.stderr)
                         return ''
                     except (IOError, OSError) as e:
                         print(f"Warning: Error reading transcript {transcript_path}: {e}", file=sys.stderr)
                         return ''
-                    except UnicodeDecodeError as e:
-                        print(f"Warning: Encoding error in transcript {transcript_path}: {e}", file=sys.stderr)
-                        return ''
+            elif (field in STOP_MESSAGE_FIELDS and not tool_name
+                  and input_data.get('hook_event_name') in STOP_EVENTS):
+                return self._stop_message(input_data)
             elif field == 'user_prompt':
                 # For UserPromptSubmit events — Claude Code sends 'prompt', not 'user_prompt'
                 return input_data.get('user_prompt') or input_data.get('prompt', '')
@@ -282,6 +330,23 @@ class RuleEngine:
                 return ' '.join(e.get('new_string', '') for e in edits)
 
         return None
+
+    def _stop_message(self, input_data: Dict[str, Any]) -> Optional[str]:
+        """The assistant's final message for a Stop event.
+
+        Claude Code supplies it as last_assistant_message; the transcript is a
+        fallback only when that key is absent.
+        """
+        if 'last_assistant_message' in input_data:
+            return input_data['last_assistant_message'] or ''
+        transcript_path = input_data.get('transcript_path')
+        if not transcript_path:
+            return None
+        try:
+            return last_assistant_text(transcript_path)
+        except (IOError, OSError) as e:
+            print(f"Warning: Error reading transcript {transcript_path}: {e}", file=sys.stderr)
+            return None
 
     def _regex_match(self, pattern: str, text: str) -> bool:
         """Check if pattern matches text using regex.

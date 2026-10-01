@@ -14,6 +14,10 @@ from typing import List, Optional, Dict, Any
 from dataclasses import dataclass, field
 
 
+# 'response' rules judge the assistant's final message, which only Stop carries.
+EVENT_ALIASES = {'response': 'stop'}
+
+
 @dataclass
 class Condition:
     """A single condition for matching."""
@@ -67,7 +71,7 @@ class Rule:
                 field = 'command'
             elif event == 'file':
                 field = 'new_text'
-            else:
+            else:  # prompt/stop/response/all
                 field = 'content'
 
             conditions = [Condition(
@@ -213,6 +217,7 @@ def load_rules(event: Optional[str] = None) -> List[Rule]:
         List of enabled Rule objects matching the event.
     """
     rules = []
+    event = EVENT_ALIASES.get(event, event)
 
     # Find all hookify.*.local.md files from both project and global .claude
     patterns = [
@@ -236,7 +241,7 @@ def load_rules(event: Optional[str] = None) -> List[Rule]:
 
             # Filter by event if specified
             if event:
-                if rule.event != 'all' and rule.event != event:
+                if rule.event != 'all' and EVENT_ALIASES.get(rule.event, rule.event) != event:
                     continue
 
             # Only include enabled rules

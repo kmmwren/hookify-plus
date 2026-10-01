@@ -4,6 +4,15 @@ All notable changes to hookify-plus are documented here.
 
 Based on upstream [hookify 0.1.0](https://github.com/anthropics/claude-code/tree/main/plugins/hookify).
 
+## Unreleased
+
+### Fixed
+- **Stop rules were dead**: `last_assistant_message`, `content`, `response` and `response_text` now resolve to the Stop input's `last_assistant_message` (transcript tail fallback only when the key is absent). A Stop already continuing after a block is not blocked again.
+- **`event: response`** is an alias of `stop`.
+- **PostToolUse hook removed**: it saw the same tool input as PreToolUse and injected every warning twice.
+- **Version field removed from plugin.json** so installs are versioned by git sha and `claude plugin update` picks up merged fixes.
+- `transcript` field reads only the last 2 MB.
+
 ## [0.1.0-plus.3] - 2025-01-16
 
 ### Fixed
